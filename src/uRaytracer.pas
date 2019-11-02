@@ -3,221 +3,236 @@ unit uRaytracer;
 interface
 
 uses
-  Vcl.Graphics;
+  uVectorTypes,
+  uSceneElements,
+  uViewer;
 
 type
-  TVector3f = record
-    X: Single;
-    Y: Single;
-    Z: Single;
-
-    constructor Create(_AX, _AY, _AZ: Single);
-    function Add(_AVector: TVector3f): TVector3f;
-    function Subtract(_AVector: TVector3f): TVector3f;
-    function Scale(_AFactor: Single): TVector3f;
-    function DotProduct(_AVector: TVector3f): Single;
-    function Magnitude: Single;
-    function Normalize: TVector3f;
-    function Reflect(_ANormal: TVector3f): TVector3f;
-    function Refract(_AN: TVector3f;
-  eta_t: Single; eta_i: Single = 1): TVector3f;
-  end;
-
-  TVector4f = record
-    X: Single;
-    Y: Single;
-    Z: Single;
-    W: Single;
-    constructor Create(_AX, _AY, _AZ, _AW: Single);
-  end;
-
-  TLight = record
-    Position: TVector3f;
-    Intensity: Single;
-    constructor Create(_APosition: TVector3f; _AIntensity: Single);
-  end;
-
-  TMaterial = record
-    DiffuseColor: TVector3f; //uma cor deve ser um tcolor
-    Albedo: TVector4f;
-    SpecularExponent: Single;
-    RefractiveIndex: Single;
-    procedure Initialize;
-  end;
-
-  TSphere = record
-    Center: TVector3f;
-    Radius: Single;
-    Material: TMaterial;
-
-    constructor Create(_ACenter: TVector3f; _ARadius: Single; _AMaterial: TMaterial);
-    function RayIntersect(_AOrig, _ADir: TVector3f; out _At0: Single): Boolean;
+  TRaytracer = class
+  private
+    class function CastRay(_AOrig, _ADir: TVector3f; _ASpheres: TArray<TSphere>; _ALights: TArray<TLight>; _ADepth: integer): TVector3f;
+    class function SceneIntersect(_AOrig, _ADir: TVector3f; _ASpheres: TArray<TSphere>; out hit: TVector3f; out n: TVector3f; out material: TMaterial): boolean;
+  public
+    class procedure Render(_AViewer: TViewer; _ASpheres: TArray<TSphere>; _ALights: TArray<TLight>);
+    class procedure RenderPPL(_AViewer: TViewer; _ASpheres: TArray<TSphere>; _ALights: TArray<TLight>);
   end;
 
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils, Math;
+  Math,
+  System.Threading;
 
+{ TRaytracer }
 
-{ TSphere }
-
-constructor TSphere.Create(_ACenter: TVector3f; _ARadius: Single; _AMaterial: TMaterial);
-begin
-  Center := _ACenter;
-  Radius := _ARadius;
-  Material := _AMaterial;
-end;
-
-function TSphere.RayIntersect(_AOrig, _ADir: TVector3f; out _At0: Single): Boolean;
+class function TRaytracer.CastRay(_AOrig, _ADir: TVector3f;
+  _ASpheres: TArray<TSphere>; _ALights: TArray<TLight>;
+  _ADepth: integer): TVector3f;
 var
-  AL: TVector3f;
-  Atca: Single;
-  Ad2: Single;
-  Athc: Single;
-  At1: Single;
-begin
-  AL := Center.Subtract(_AOrig);
-  Atca := AL.DotProduct(_ADir);
-  Ad2 := AL.DotProduct(AL) - (Atca * Atca);
+  point, N: TVector3f;
+  material: TMaterial;
+  diffuse_light_intensity: Single;
+  specular_light_intensity: Single;
+  i: integer;
+  light_dir: TVector3f;
+  diffuse_color: Tvector3f;
+  specular_color: TVector3f;
+  light_distance: Single;
+  shadow_orig: TVector3f;
 
-  if (Ad2 > Radius * Radius) then
+  shadow_pt, shadow_N: TVector3f;
+  tmpmaterial: TMaterial;
+
+  reflect_dir: TVector3f;
+  reflect_orig: TVector3f;
+  reflect_color: TVector3f;
+
+  ANewDepth: Integer;
+
+  refract_dir: TVector3f;
+  refract_orig: TVector3f;
+  refract_color: TVector3f;
+begin
+  if (_ADepth > 4) or (not SceneIntersect(_AOrig, _ADir, _ASpheres, point, N, material)) then
   begin
-    Result := False;
+    Result := TVector3f.Create(0.2, 0.7, 0.8); // background color
     exit;
   end;
 
-  Athc := Sqrt(Radius * Radius - Ad2);
-  _At0 := Atca - Athc;
-  At1 := Atca + Athc;
+  reflect_dir := _ADir.Reflect(N).Normalize;
+  refract_dir := _ADir.Refract(N, material.RefractiveIndex).Normalize;
 
-  if (_At0 < 0) then
-    _At0 := At1;
-
-  if (_At0 < 0) then
-  begin
-    Result := False;
-    exit;
-  end;
-
-  Result := True;
-end;
-
-{ TVector3f }
-
-function TVector3f.Add(_AVector: TVector3f): TVector3f;
-begin
-  Result := TVector3f.Create(X + _AVector.X,
-                             Y + _AVector.Y,
-                             Z + _AVector.Z);
-end;
-
-constructor TVector3f.Create(_AX, _AY, _AZ: Single);
-begin
-  X := _AX;
-  Y := _AY;
-  Z := _AZ;
-end;
-
-function TVector3f.DotProduct(_AVector: TVector3f): Single;
-begin
-  Result := X * _AVector.X +
-            Y * _AVector.Y +
-            Z * _AVector.Z;
-end;
-
-function TVector3f.Magnitude: Single;
-begin
-  Result := Sqrt(X * X +
-                 Y * Y +
-                 Z * Z);
-end;
-
-function TVector3f.Normalize: TVector3f;
-var
-  AMag: Single;
-begin
-  AMag := Magnitude;
-  Result := TVector3f.Create(X / AMag,
-                             Y / AMag,
-                             Z / AMag);
-end;
-
-function TVector3f.Reflect(_ANormal: TVector3f): TVector3f;
-var
-  AIDotN: Single;
-  ANScale2: TVector3f;
-begin
-  //Result := I - N*2.f*(I*N);
-  ANScale2 := _ANormal.Scale(2);
-  AIDotN := Self.DotProduct(_ANormal);
-
-  Result := Self.Subtract(ANScale2.Scale(AIDotN));
-end;
-
-function TVector3f.Refract(_AN: TVector3f;
-  eta_t: Single; eta_i: Single = 1): TVector3f;
-var
-  cosi: Single;
-  eta: Single;
-  k: Single;
-begin
-  cosi := Max(-1, Min(1, Self.DotProduct(_AN))) * (-1);
-  if (cosi < 0) then
-  begin
-    result := Self.Refract(_AN.Scale(-1), eta_i, eta_t);
-    exit;
-  end;
-
-  eta := eta_i / eta_t;
-  k := 1 - eta * eta * (1 - cosi * cosi);
-
-  if (k < 0) then
-    result := TVector3f.Create(1, 0, 0)
+  if reflect_dir.DotProduct(N) < 0 then
+    reflect_orig := point.Subtract(N.Scale(0.001))
   else
-    result := Self.Scale(eta).Add(_AN.Scale(eta * cosi - sqrt(k)));
+    reflect_orig := point.Add(N.Scale(0.001));
+
+  if refract_dir.DotProduct(N) < 0 then
+    refract_orig := point.Subtract(N.Scale(0.001))
+ else
+    refract_orig := point.Add(N.Scale(0.001));
+
+  ANewDepth := _ADepth + 1;
+  reflect_color := CastRay(reflect_orig, reflect_dir, _ASpheres, _ALights, ANewDepth);
+  refract_color := CastRay(refract_orig, refract_dir, _ASpheres, _ALights, ANewDepth);
+
+  diffuse_light_intensity := 0;
+  specular_light_intensity := 0;
+
+  for i := 0 to Length(_ALights) -1 do
+  begin
+    light_dir := _ALights[i].position.Subtract(point).normalize;
+
+    light_distance := _ALights[i].position.Subtract(point).Magnitude;
+
+    if light_dir.DotProduct(N) < 0 then
+      shadow_orig := point.Subtract(N.Scale(0.001))
+    else
+      shadow_orig := point.Add(N.Scale(0.001));
+
+    if (SceneIntersect(shadow_orig, light_dir, _ASpheres, shadow_pt, shadow_N, tmpmaterial) and
+       (shadow_pt.Subtract(shadow_orig).Magnitude < light_distance)) then
+        continue;
+
+    diffuse_light_intensity := diffuse_light_intensity +
+      _ALights[i].intensity * Max(0, light_dir.DotProduct(N));
+
+    specular_light_intensity := specular_light_intensity +
+      Power(Max(0, light_dir.Scale(-1).Reflect(N).Scale(-1).DotProduct(_ADir)),
+        material.SpecularExponent) * _ALights[i].intensity;
+  end;
+
+  diffuse_color := material.CalculateDiffuseColorInScene(diffuse_light_intensity);
+  specular_color := material.CalculateSpecularColorInScene(specular_light_intensity);
+  reflect_color := material.CalculateReflectColorInScene(reflect_color);
+  refract_color := material.CalculateRefractColorInScene(refract_color);
+
+  result := diffuse_color.Add(specular_color).Add(reflect_color).Add(refract_color);
 end;
 
-function TVector3f.Scale(_AFactor: Single): TVector3f;
+class procedure TRaytracer.Render(_AViewer: TViewer; _ASpheres: TArray<TSphere>;
+  _ALights: TArray<TLight>);
+var
+  j: Integer;
+  i: integer;
+  x, y: Single;
+  AFOV: Single;
+  Adir: Tvector3f;
+  AColor: TVector3f;
 begin
-  Result := TVector3f.Create(X * _AFactor,
-                             Y * _AFactor,
-                             Z * _AFactor);
+  AFOV := Pi/2;
+  for j := 0 to _AViewer.Height - 1 do
+    for i := 0 to _AViewer.Width - 1 do
+    begin
+      x :=  (2*(i + 0.5)/_AViewer.Width  - 1)*tan(AFOV/2)*_AViewer.Width/_AViewer.Height;
+      y := -(2*(j + 0.5)/_AViewer.Height - 1)*tan(AFOV/2);
+
+      Adir := TVector3f.Create(x, y, -1).Normalize;
+
+      AColor := CastRay(TVector3f.Create(0,0,0), Adir, _ASpheres, _ALights, 0);
+
+      _AViewer.SetPixel(i, j, AColor);
+    end;
 end;
 
-function TVector3f.Subtract(_AVector: TVector3f): TVector3f;
+class procedure TRaytracer.RenderPPL(_AViewer: TViewer;
+  _ASpheres: TArray<TSphere>; _ALights: TArray<TLight>);
+var
+  AFOV: Single;
+  AWidth, AHeight: Integer;
+  ASlices: integer;
+
+  //x, y: Single; //uncomment for concurrency bugs visualization
 begin
-  Result := TVector3f.Create(X - _AVector.X,
-                             Y - _AVector.Y,
-                             Z - _AVector.Z);
+  AWidth := _AViewer.Width;
+  AHeight := _AViewer.Height;
+
+  AFOV := Pi/2;
+
+
+  ASlices := 8;
+
+  TParallel.For(1, ASlices,
+    procedure(k: integer)
+    var
+      ASliceIni,
+      ASliceFin: integer;
+
+      x, y: Single; //comment for concurrency bugs visualization
+      i, j: Integer;
+
+      Adir: Tvector3f;
+
+      AColor: TVector3f;
+//      ACorfrag: single; //for threads responsibilities visualization
+    begin
+        ASliceIni := ((AHeight div ASlices) * k) - ((AHeight div ASlices) - 1);
+        ASliceFin := (AHeight div ASlices) * k;
+
+
+        for j := (ASliceIni - 1) to (ASliceFin - 1) do
+          for i := 0 to AWidth - 1 do
+          begin
+            x :=  (2*(i + 0.5)/AWidth  - 1)*tan(AFOV/2)*AWidth/AHeight;
+            y := -(2*(j + 0.5)/AHeight - 1)*tan(AFOV/2);
+
+            Adir := TVector3f.Create(x, y, -1).Normalize;
+
+            AColor := CastRay(TVector3f.Create(0,0,0), Adir, _ASpheres, _ALights, 0);
+
+//            ACorfrag := k / ASlices;
+//            AColor := AColor.Scale(ACorfrag );
+
+            _AViewer.SetPixel(i, j, AColor);
+          end;
+    end);
 end;
 
-{ TLight }
-
-constructor TLight.Create(_APosition: TVector3f; _AIntensity: Single);
+class function TRaytracer.SceneIntersect(_AOrig, _ADir: TVector3f;
+  _ASpheres: TArray<TSphere>; out hit, n: TVector3f;
+  out material: TMaterial): boolean;
+var
+  ASphereDist: Single;
+  ADist_i: Single;
+  i: integer;
+  checkerboard_dist: Single;
+  d: Single;
+  pt: TVector3f;
 begin
-  Position := _APosition;
-  Intensity := _AIntensity;
-end;
+  ASphereDist := MaxInt;
 
-{ TVector2f }
+  for i := 0 to Length(_ASpheres) - 1 do
+  begin
+    if (_ASpheres[i].RayIntersect(_AOrig, _ADir, ADist_i) and (ADist_i < ASphereDist)) then
+    begin
+      ASphereDist := ADist_i;
+      hit := _AOrig.Add(_ADir.Scale(ADist_i));
+      N := hit.Subtract(_ASpheres[i].center).normalize();
+      material := _ASpheres[i].material;
+    end;
+  end;
 
-constructor TVector4f.Create(_AX, _AY, _AZ, _AW: Single);
-begin
-  X := _AX;
-  Y := _AY;
-  Z := _AZ;
-  W := _AW;
-end;
+  checkerboard_dist := MaxInt;
 
-{ TMaterial }
+  if (Abs(_ADir.y)> 0.001) then
+  begin
+    d := -(_AOrig.y+4)/_ADir.y; // the checkerboard plane has equation y = -4
+    pt := _AOrig.Add(_ADir.Scale(d));
+    if (d>0) and (abs(pt.x)<10) and (pt.z<-10) and (pt.z>-30) and (d<ASphereDist) then
+    begin
+      checkerboard_dist := d;
+      hit := pt;
+      N := TVector3f.Create(0,1,0);
 
-procedure TMaterial.Initialize;
-begin
-  DiffuseColor := TVector3f.Create(0.0, 0.0, 0.0);
-  Albedo := TVector4f.Create(1, 0, 0, 0);
-  SpecularExponent := 50;
-  RefractiveIndex := 1;
+      material.Initialize;
+      if ((trunc(0.5*hit.x+1000) + trunc(0.5*hit.z)) and 1) = 1 then
+        material.DiffuseColor := TVector3f.Create(0.3, 0.3, 0.3)
+      else
+        material.DiffuseColor := TVector3f.Create(0.3, 0.2, 0.1);
+    end;
+  end;
+
+  result := Min(ASphereDist, checkerboard_dist) < 1000;
 end;
 
 end.

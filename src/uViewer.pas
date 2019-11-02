@@ -3,7 +3,8 @@ unit uViewer;
 interface
 
 uses
-  uRaytracer, Vcl.Graphics;
+  Vcl.Graphics,
+  uVectorTypes;
 
 type
   TViewer = class
@@ -27,7 +28,7 @@ type
     procedure SetZValue(x, y: Integer; _AValue: Single);
 
     procedure SaveToBitmap(_AFileName: String);
-    function ToBitmap: Vcl.Graphics.TBitmap;
+    function ToBitmap(_AFlipVertical: Boolean = False): Vcl.Graphics.TBitmap;
   end;
 
 implementation
@@ -39,15 +40,15 @@ uses
 
 constructor TViewer.Create(_AHeight, _AWidth: Integer);
 var
-	i: Integer;
+  i: Integer;
   s: Single;
 begin
-	FHeight := _AHeight;
-	FWidth := _AWidth;
+  FHeight := _AHeight;
+  FWidth := _AWidth;
   s := MaxInt * (-1);
 
-	SetLength(FFrameBuffer, _AWidth * _AHeight);
-	SetLength(FZBuffer, _AWidth * _AHeight);
+  SetLength(FFrameBuffer, _AWidth * _AHeight);
+  SetLength(FZBuffer, _AWidth * _AHeight);
 
   for i := Low(FZBuffer) to High(FZBuffer) do
     FZBuffer[i] := s;
@@ -55,24 +56,25 @@ end;
 
 function TViewer.GetColor(_AVectorColor: TVector3f): TColor;
 var
-  AR,
-  AG,
-  AB: Integer;
+  AR, AG, AB: Integer;
+
   function FixMaxRange(_AValue: Integer): Integer;
   begin
-    Result:= _AValue;
+    Result := _AValue;
     if _AValue > 255 then
       Result := 255;
   end;
+
   function FixMinRange(_AValue: Integer): Integer;
   begin
-    Result:= _AValue;
+    Result := _AValue;
     if _AValue < 0 then
       Result := 0;
   end;
+
 begin
-  AR := Trunc(_AVectorColor.X * 255);
-  AG := Trunc(_AVectorColor.Y * 255);
+  AR := Trunc(_AVectorColor.x * 255);
+  AG := Trunc(_AVectorColor.y * 255);
   AB := Trunc(_AVectorColor.Z * 255);
 
   AR := FixMaxRange(AR);
@@ -119,12 +121,12 @@ begin
   FZBuffer[x + y * FWidth] := _AValue;
 end;
 
-function TViewer.ToBitmap: Vcl.Graphics.TBitmap;
+function TViewer.ToBitmap(_AFlipVertical: Boolean = False): Vcl.Graphics.TBitmap;
 type
-  TRGBTripleArray = ARRAY[Word] of TRGBTriple;
+  TRGBTripleArray = ARRAY [Word] of TRGBTriple;
   pRGBTripleArray = ^TRGBTripleArray; // use a PByteArray for pf8bit color
 var
-  x, y: integer;
+  x, y: Integer;
   AScanLine: pRGBTripleArray;
   AColor: TVector3f;
   ADelphiColor: TColor;
@@ -135,20 +137,24 @@ begin
     Result.Width := Width;
     Result.PixelFormat := pf24Bit;
 
-     for y := 0 to Height - 1 do
+    for y := 0 to Height - 1 do
+    begin
+      AScanLine := Result.ScanLine[y];
+
+      for x := 0 to Width - 1 do
       begin
-        AScanLine := Result.ScanLine[y];
-        for x := 0 to Width - 1 do
-        begin
-          AColor := GetPixel(x, {Height - }y);
+        if _AFlipVertical then
+          AColor := GetPixel(x, Height - y)
+        else  
+          AColor := GetPixel(x, y);
 
-          ADelphiColor := GetColor(AColor);
+        ADelphiColor := GetColor(AColor);
 
-          AScanLine[x].rgbtRed := GetRValue(ADelphiColor);
-          AScanLine[x].rgbtGreen := GetGValue(ADelphiColor);
-          AScanLine[x].rgbtBlue := GetBValue(ADelphiColor);
-        end;
+        AScanLine[x].rgbtRed := GetRValue(ADelphiColor);
+        AScanLine[x].rgbtGreen := GetGValue(ADelphiColor);
+        AScanLine[x].rgbtBlue := GetBValue(ADelphiColor);
       end;
+    end;
   except
     Result.Free;
     raise;
@@ -156,4 +162,3 @@ begin
 end;
 
 end.
-

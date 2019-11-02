@@ -102,11 +102,13 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="uForm.pas">
-            <Form>Form1</Form>
+            <Form>MainForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="uRaytracer.pas"/>
         <DCCReference Include="uViewer.pas"/>
+        <DCCReference Include="uVectorTypes.pas"/>
+        <DCCReference Include="uSceneElements.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
