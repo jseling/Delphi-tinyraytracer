@@ -5,6 +5,8 @@ A raytracer implementation in delphi translated from [ssloy/tinyraytracer](https
 - Build with Delphi 10.3 Rio Community Edition 
 - None third party library dependency
 
+![](https://raw.githubusercontent.com/ssloy/tinyraytracer/master/out.jpg)
+
 ## To Do
 - Better OOP approach
 - Change records to objects
