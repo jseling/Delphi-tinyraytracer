@@ -1,7 +1,7 @@
 # Delphi-tinyraytracer
 A raytracer implementation in delphi translated from [ssloy/tinyraytracer](https://github.com/ssloy/tinyraytracer/wiki/Part-1:-understandable-raytracing)
 
-- Optional use of Delphi PPL library
+- Optional use of [Delphi PPL library](http://docwiki.embarcadero.com/RADStudio/Rio/en/Using_the_Parallel_Programming_Library)
 - Build with [Delphi 10.3 Rio Community Edition](https://www.embarcadero.com/products/delphi/starter)
 - None third party library dependency
 
