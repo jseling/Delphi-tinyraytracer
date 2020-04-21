@@ -9,7 +9,9 @@ A raytracer implementation in Delphi translated from [ssloy/tinyraytracer](https
 
 ## To Do
 - Better OOP approach
-- Change records to objects
 - Better scene building
 - Checkboard as a scene object
 - Refactor TRaytracer class (especially CastRay method)
+
+## Not To Do
+- Change records to objects: Performance questions. Memory stack and heap.
